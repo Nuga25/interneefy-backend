@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        Int      @id @default(autoincrement())
+  name      String
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  users     User[]
+  tasks     Task[]
+  evaluations Evaluation[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  fullName  String
+  email     String   @unique
+  password  String
+  role      Role
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id])
+  companyId Int
+
+  tasksAsSupervisor Task[] @relation("SupervisorTasks")
+  tasksAsIntern     Task[] @relation("InternTasks")
+  evalsAsSupervisor Evaluation[] @relation("SupervisorEvals")
+  evalsAsIntern     Evaluation[] @relation("InternEvals")
+}
+
+model Task {
+  id            Int      @id @default(autoincrement())
+  title         String
+  description   String?
+  status        Status   @default(TODO)
+  dueDate       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  company       Company  @relation(fields: [companyId], references: [id])
+  companyId     Int
+  supervisor    User     @relation("SupervisorTasks", fields: [supervisorId], references: [id])
+  supervisorId  Int
+  intern        User?    @relation("InternTasks", fields: [internId], references: [id])
+  internId      Int?
+}
+
+model Evaluation {
+  id                  Int      @id @default(autoincrement())
+  comments            String?
+  technicalScore      Int?
+  communicationScore  Int?
+  teamworkScore       Int?
+  submittedAt         DateTime @default(now())
+  company             Company  @relation(fields: [companyId], references: [id])
+  companyId           Int
+  intern              User     @relation("InternEvals", fields: [internId], references: [id])
+  internId            Int
+  supervisor          User     @relation("SupervisorEvals", fields: [supervisorId], references: [id])
+  supervisorId        Int
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  INTERN
+}
+
+enum Status {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+}
