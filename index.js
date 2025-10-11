@@ -1,4 +1,6 @@
 require("dotenv").config();
+const { sendWelcomeEmail } = require("./utils/emailService");
+const { generateSecurePassword } = require("./utils/passwordGenerator");
 const authMiddleware = require("./middleware/authMiddleware");
 const express = require("express");
 const cors = require("cors");
@@ -34,12 +36,10 @@ app.post("/api/auth/register-company", async (req, res) => {
     });
     // Security note: Exclude password from the response
     const { password: _, ...adminUser } = company.users[0];
-    res
-      .status(201)
-      .json({
-        message: "Company and Admin created!",
-        company: { ...company, users: [adminUser] },
-      });
+    res.status(201).json({
+      message: "Company and Admin created!",
+      company: { ...company, users: [adminUser] },
+    });
   } catch (error) {
     console.error("Registration Error:", error);
     res
@@ -128,15 +128,23 @@ app.post("/api/users", authMiddleware, async (req, res) => {
   }
 
   // NOTE: Added supervisorId for linking Interns to Supervisors
-  const { fullName, email, password, role, supervisorId } = req.body;
+  const { fullName, email, role, supervisorId } = req.body;
 
   // Basic validation
-  if (!fullName || !email || !password || !role) {
+  if (!fullName || !email || !role) {
     return res.status(400).json({ error: "All fields are required." });
   }
 
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    //generate a secure random password
+    const generatedPassword = generateSecurePassword(12);
+    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+
+    //get company name for the email
+    const company = await prisma.company.findUnique({
+      where: { id: req.user.companyId },
+      select: { name: true },
+    });
 
     const newUser = await prisma.user.create({
       data: {
@@ -158,7 +166,22 @@ app.post("/api/users", authMiddleware, async (req, res) => {
       },
     });
 
-    res.status(201).json(newUser);
+    // send welcome email with credentials
+    sendWelcomeEmail({
+      fullName,
+      email,
+      password: generatedPassword,
+      role,
+      companyName: company.name || "Your Company",
+    }).catch((error) =>
+      console.error("Error sending welcome email:", error, "to:", email)
+    );
+
+    res.status(201).json({
+      ...newUser,
+      message:
+        "User created successfully. Login credentials have been sent to the user's email.",
+    });
   } catch (error) {
     console.error("Create User Error:", error);
     // Handle cases where the email might already exist
@@ -197,6 +220,116 @@ app.get("/api/users", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Get All Users Error:", error);
     res.status(500).json({ error: "Failed to retrieve users." });
+  }
+});
+
+// Get enrollment statistics by month
+app.get("/api/statistics/enrollment", authMiddleware, async (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res
+      .status(403)
+      .json({ error: "Forbidden: Only Admins can view statistics." });
+  }
+
+  try {
+    // Get all interns from the company
+    const interns = await prisma.user.findMany({
+      where: {
+        companyId: req.user.companyId,
+        role: "INTERN",
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+
+    // Group by month
+    const monthlyData = {};
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+
+    interns.forEach((intern) => {
+      const date = new Date(intern.createdAt);
+      const monthName = months[date.getMonth()];
+      const year = date.getFullYear();
+      const key = `${monthName} ${year}`;
+
+      if (!monthlyData[key]) {
+        monthlyData[key] = { name: monthName, interns: 0, fullDate: date };
+      }
+      monthlyData[key].interns++;
+    });
+
+    // Convert to array and sort by date
+    const enrollmentData = Object.values(monthlyData)
+      .sort((a, b) => a.fullDate - b.fullDate)
+      .slice(-6) // Get last 6 months
+      .map(({ name, interns }) => ({ name, interns }));
+
+    res.status(200).json(enrollmentData);
+  } catch (error) {
+    console.error("Get Enrollment Statistics Error:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to retrieve enrollment statistics." });
+  }
+});
+
+// Get interns by domain/supervisor statistics
+app.get("/api/statistics/domains", authMiddleware, async (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res
+      .status(403)
+      .json({ error: "Forbidden: Only Admins can view statistics." });
+  }
+
+  try {
+    // Get all interns with their supervisors
+    const interns = await prisma.user.findMany({
+      where: {
+        companyId: req.user.companyId,
+        role: "INTERN",
+      },
+      include: {
+        supervisor: {
+          select: {
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    // Group by supervisor (you can change this to domain when you add that field)
+    const domainData = {};
+
+    interns.forEach((intern) => {
+      const supervisorName = intern.supervisor?.fullName || "Unassigned";
+
+      if (!domainData[supervisorName]) {
+        domainData[supervisorName] = { name: supervisorName, value: 0 };
+      }
+      domainData[supervisorName].value++;
+    });
+
+    // Convert to array
+    const domainsArray = Object.values(domainData);
+
+    res.status(200).json(domainsArray);
+  } catch (error) {
+    console.error("Get Domain Statistics Error:", error);
+    res.status(500).json({ error: "Failed to retrieve domain statistics." });
   }
 });
 
@@ -287,11 +420,9 @@ app.get("/api/tasks/:id", authMiddleware, async (req, res) => {
       task.internId === userId ||
       task.supervisorId === userId;
     if (!canView) {
-      return res
-        .status(403)
-        .json({
-          error: "Forbidden: You do not have permission to view this task.",
-        });
+      return res.status(403).json({
+        error: "Forbidden: You do not have permission to view this task.",
+      });
     }
 
     res.status(200).json(task);
@@ -343,12 +474,10 @@ app.put("/api/tasks/:id", authMiddleware, async (req, res) => {
     }
 
     if (!canUpdate) {
-      return res
-        .status(403)
-        .json({
-          error:
-            "Forbidden: Insufficient permissions or not the assigned user/supervisor.",
-        });
+      return res.status(403).json({
+        error:
+          "Forbidden: Insufficient permissions or not the assigned user/supervisor.",
+      });
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -467,9 +596,9 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
   }
 
   try {
-    // Before deleting the user, we should ensure all dependent records (Tasks, Evals)
-    // are handled. Prisma can handle this if you set up 'onDelete: Cascade',
-    // but for safety, we'll focus on the primary delete.
+    // Deleting the user. If your Prisma schema uses 'onDelete: Cascade' for relationships
+    // (Task, Evaluation), this will delete dependents automatically.
+    // If not, the P2003 catch block below will handle the constraint violation.
     await prisma.user.delete({
       where: {
         id: userIdToDelete,
@@ -483,12 +612,10 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
     console.error("Delete User Error:", error);
     // P2003 = Foreign key constraint failed (user still has tasks/evals assigned)
     if (error.code === "P2003") {
-      return res
-        .status(409)
-        .json({
-          error:
-            "Cannot delete user. Please reassign or delete their associated tasks and evaluations first.",
-        });
+      return res.status(409).json({
+        error:
+          "Cannot delete user. Please reassign or delete their associated tasks and evaluations first.",
+      });
     }
     res.status(500).json({ error: "Failed to delete user." });
   }
