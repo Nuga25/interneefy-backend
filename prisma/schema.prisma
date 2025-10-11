@@ -4,28 +4,35 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
 }
 
+// --- Company Model ---
 model Company {
-  id        Int      @id @default(autoincrement())
-  name      String
-  logoUrl   String?
-  createdAt DateTime @default(now())
-  users     User[]
-  tasks     Task[]
+  id          Int          @id @default(autoincrement())
+  name        String
+  logoUrl     String?
+  createdAt   DateTime     @default(now())
+  users       User[]
+  tasks       Task[]
   evaluations Evaluation[]
 }
 
+// --- User Model (Updated for Supervision) ---
 model User {
-  id        Int      @id @default(autoincrement())
-  fullName  String
-  email     String   @unique
-  password  String
-  role      Role
-  createdAt DateTime @default(now())
-  company   Company  @relation(fields: [companyId], references: [id])
-  companyId Int
+  id                Int          @id @default(autoincrement())
+  fullName          String
+  email             String       @unique
+  password          String
+  role              Role
+  createdAt         DateTime     @default(now())
+  company           Company      @relation(fields: [companyId], references: [id])
+  companyId         Int
+
+  // NEW: Supervision relationship (Self-referencing)
+  supervisees       User[]       @relation("Supervision")            // If this user is a supervisor, these are their interns
+  supervisor        User?        @relation("Supervision", fields: [supervisorId], references: [id]) // This is the user's direct supervisor
+  supervisorId      Int?                                            // Foreign key linking to the supervisor's ID
 
   tasksAsSupervisor Task[] @relation("SupervisorTasks")
   tasksAsIntern     Task[] @relation("InternTasks")
@@ -33,22 +40,28 @@ model User {
   evalsAsIntern     Evaluation[] @relation("InternEvals")
 }
 
+// --- Task Model (Finalized: No time tracking fields) ---
 model Task {
-  id            Int      @id @default(autoincrement())
-  title         String
-  description   String?
-  status        Status   @default(TODO)
-  dueDate       DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  company       Company  @relation(fields: [companyId], references: [id])
-  companyId     Int
-  supervisor    User     @relation("SupervisorTasks", fields: [supervisorId], references: [id])
-  supervisorId  Int
-  intern        User?    @relation("InternTasks", fields: [internId], references: [id])
-  internId      Int?
+  id               Int        @id @default(autoincrement())
+  title            String
+  description      String?
+  status           Status     @default(TODO)
+  priority         Priority   @default(MEDIUM) // NEW: High, Medium, Low
+  category         String?                     // NEW: e.g., "Development", "Design"
+  dueDate          DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  company          Company    @relation(fields: [companyId], references: [id])
+  companyId        Int
+  
+  supervisor       User       @relation("SupervisorTasks", fields: [supervisorId], references: [id])
+  supervisorId     Int
+  intern           User?      @relation("InternTasks", fields: [internId], references: [id])
+  internId         Int?
 }
 
+// --- Evaluation Model (No change needed) ---
 model Evaluation {
   id                  Int      @id @default(autoincrement())
   comments            String?
@@ -56,6 +69,7 @@ model Evaluation {
   communicationScore  Int?
   teamworkScore       Int?
   submittedAt         DateTime @default(now())
+
   company             Company  @relation(fields: [companyId], references: [id])
   companyId           Int
   intern              User     @relation("InternEvals", fields: [internId], references: [id])
@@ -63,6 +77,8 @@ model Evaluation {
   supervisor          User     @relation("SupervisorEvals", fields: [supervisorId], references: [id])
   supervisorId        Int
 }
+
+// --- Enums (Updated) ---
 
 enum Role {
   ADMIN
@@ -74,4 +90,12 @@ enum Status {
   TODO
   IN_PROGRESS
   COMPLETED
+  PENDING    // NEW: Submitted by intern, awaiting supervisor review
+  APPROVED   // NEW: Final status after supervisor sign-off
+}
+
+enum Priority { // NEW
+  HIGH
+  MEDIUM
+  LOW
 }
