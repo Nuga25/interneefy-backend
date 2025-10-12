@@ -653,6 +653,67 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// Get company details
+app.get("/api/company", authMiddleware, async (req, res) => {
+  try {
+    const company = await prisma.company.findUnique({
+      where: { id: req.user.companyId },
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        createdAt: true,
+      },
+    });
+
+    if (!company) {
+      return res.status(404).json({ error: "Company not found." });
+    }
+
+    res.status(200).json(company);
+  } catch (error) {
+    console.error("Get Company Error:", error);
+    res.status(500).json({ error: "Failed to retrieve company details." });
+  }
+});
+
+// Update company details (Admin only)
+app.put("/api/company", authMiddleware, async (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res
+      .status(403)
+      .json({ error: "Forbidden: Only Admins can update company details." });
+  }
+
+  const { name, logoUrl } = req.body;
+
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: "Company name is required." });
+  }
+
+  try {
+    const updatedCompany = await prisma.company.update({
+      where: { id: req.user.companyId },
+      data: {
+        name: name.trim(),
+        ...(logoUrl !== undefined && { logoUrl }), // Only update if provided
+      },
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        createdAt: true,
+      },
+    });
+
+    res.status(200).json(updatedCompany);
+  } catch (error) {
+    console.error("Update Company Error:", error);
+    res.status(500).json({ error: "Failed to update company details." });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
