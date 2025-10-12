@@ -232,7 +232,8 @@ app.get("/api/users", authMiddleware, async (req, res) => {
         startDate: true,
         endDate: true,
         createdAt: true,
-        experience: true, // NEW
+        experience: true,
+        supervisorId: true,
         supervisor: { select: { fullName: true } },
         supervisees: {
           // NEW: For supervisors' intern count/list
@@ -606,6 +607,61 @@ app.post("/api/evaluations", authMiddleware, async (req, res) => {
   }
 
   try {
+    // CHECK IF INTERN EXISTS AND BELONGS TO THIS SUPERVISOR
+    const intern = await prisma.user.findUnique({
+      where: { id: parseInt(internId) },
+      select: {
+        id: true,
+        supervisorId: true,
+        endDate: true,
+        fullName: true,
+      },
+    });
+
+    if (!intern) {
+      return res.status(404).json({ error: "Intern not found." });
+    }
+
+    // CHECK IF SUPERVISOR IS AUTHORIZED
+    if (intern.supervisorId !== req.user.userId) {
+      return res
+        .status(403)
+        .json({ error: "You are not the supervisor of this intern." });
+    }
+
+    // CHECK IF INTERNSHIP HAS ENDED
+    if (!intern.endDate) {
+      return res
+        .status(400)
+        .json({ error: "This intern does not have an end date set." });
+    }
+
+    const endDate = new Date(intern.endDate);
+    const now = new Date();
+
+    if (endDate > now) {
+      return res.status(400).json({
+        error: `Cannot evaluate ${
+          intern.fullName
+        }. Their internship ends on ${endDate.toLocaleDateString()}. Evaluations can only be submitted after the internship period has ended.`,
+      });
+    }
+
+    // CHECK IF EVALUATION ALREADY EXISTS
+    const existingEvaluation = await prisma.evaluation.findFirst({
+      where: {
+        internId: parseInt(internId),
+        supervisorId: req.user.userId,
+      },
+    });
+
+    if (existingEvaluation) {
+      return res.status(409).json({
+        error: "You have already submitted an evaluation for this intern.",
+      });
+    }
+
+    // CREATE EVALUATION
     const newEvaluation = await prisma.evaluation.create({
       data: {
         comments,
@@ -617,6 +673,7 @@ app.post("/api/evaluations", authMiddleware, async (req, res) => {
         internId: parseInt(internId),
       },
     });
+
     res.status(201).json(newEvaluation);
   } catch (error) {
     console.error("Submit Evaluation Error:", error);
@@ -660,6 +717,40 @@ app.get("/api/evaluations/me", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Get Evaluation Error:", error);
     res.status(500).json({ error: "Failed to retrieve evaluation." });
+  }
+});
+
+// Get all evaluations for a supervisor's interns
+app.get("/api/evaluations/supervisor", authMiddleware, async (req, res) => {
+  if (req.user.role !== "SUPERVISOR") {
+    return res
+      .status(403)
+      .json({ error: "Forbidden: Only Supervisors can access this route." });
+  }
+
+  try {
+    const evaluations = await prisma.evaluation.findMany({
+      where: {
+        supervisorId: req.user.userId,
+        companyId: req.user.companyId,
+      },
+      include: {
+        intern: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+      },
+      orderBy: {
+        submittedAt: "desc",
+      },
+    });
+
+    res.status(200).json(evaluations);
+  } catch (error) {
+    console.error("Get Supervisor Evaluations Error:", error);
+    res.status(500).json({ error: "Failed to retrieve evaluations." });
   }
 });
 
