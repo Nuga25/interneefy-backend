@@ -524,6 +524,28 @@ app.put("/api/tasks/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE task endpoint (add this to your index.js)
+app.delete("/api/tasks/:id", authMiddleware, async (req, res) => {
+  const taskId = parseInt(req.params.id);
+  const { userId, role } = req.user;
+
+  try {
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return res.status(404).json({ error: "Task not found." });
+
+    // Only supervisor who created the task can delete it
+    if (role === "SUPERVISOR" && task.supervisorId !== userId) {
+      return res.status(403).json({ error: "Forbidden: Not your task." });
+    }
+
+    await prisma.task.delete({ where: { id: taskId } });
+    res.status(204).send();
+  } catch (error) {
+    console.error("Delete Task Error:", error);
+    res.status(500).json({ error: "Failed to delete task." });
+  }
+});
+
 // --- NEW ENDPOINT: Get all tasks assigned to a Supervisor's Interns ---
 app.get("/api/supervision/tasks", authMiddleware, async (req, res) => {
   if (req.user.role !== "SUPERVISOR") {
@@ -687,6 +709,35 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "User not found in your company." });
     }
     res.status(500).json({ error: "Failed to delete user." });
+  }
+});
+
+// Get all evaluations submitted by the supervisor
+app.get("/api/evaluations", authMiddleware, async (req, res) => {
+  if (req.user.role !== "SUPERVISOR") {
+    return res.status(403).json({
+      error: "Forbidden: Only Supervisors can view evaluations.",
+    });
+  }
+
+  try {
+    const evaluations = await prisma.evaluation.findMany({
+      where: {
+        supervisorId: req.user.userId,
+        companyId: req.user.companyId,
+      },
+      include: {
+        intern: {
+          select: { fullName: true },
+        },
+      },
+      orderBy: { submittedAt: "desc" },
+    });
+
+    res.status(200).json(evaluations);
+  } catch (error) {
+    console.error("Get Evaluations Error:", error);
+    res.status(500).json({ error: "Failed to retrieve evaluations." });
   }
 });
 
