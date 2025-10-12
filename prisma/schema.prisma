@@ -18,21 +18,24 @@ model Company {
   evaluations Evaluation[]
 }
 
-// --- User Model (Updated for Supervision) ---
+// --- User Model (Updated for Supervision + Intern Fields) ---
 model User {
   id                Int          @id @default(autoincrement())
   fullName          String
   email             String       @unique
   password          String
   role              Role
+  domain            String?      @default("General") // NEW: e.g., "Software Engineering"
+  startDate         DateTime?    // NEW: Internship start date
+  endDate           DateTime?    // NEW: Internship end date
   createdAt         DateTime     @default(now())
   company           Company      @relation(fields: [companyId], references: [id])
   companyId         Int
 
-  // NEW: Supervision relationship (Self-referencing)
-  supervisees       User[]       @relation("Supervision")            // If this user is a supervisor, these are their interns
-  supervisor        User?        @relation("Supervision", fields: [supervisorId], references: [id]) // This is the user's direct supervisor
-  supervisorId      Int?                                            // Foreign key linking to the supervisor's ID
+  // Supervision relationship (Self-referencing)
+  supervisees       User[]       @relation("Supervision")
+  supervisor        User?        @relation("Supervision", fields: [supervisorId], references: [id])
+  supervisorId      Int?
 
   tasksAsSupervisor Task[] @relation("SupervisorTasks")
   tasksAsIntern     Task[] @relation("InternTasks")
@@ -46,8 +49,8 @@ model Task {
   title            String
   description      String?
   status           Status     @default(TODO)
-  priority         Priority   @default(MEDIUM) // NEW: High, Medium, Low
-  category         String?                     // NEW: e.g., "Development", "Design"
+  priority         Priority   @default(MEDIUM)
+  category         String?
   dueDate          DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -90,11 +93,11 @@ enum Status {
   TODO
   IN_PROGRESS
   COMPLETED
-  PENDING    // NEW: Submitted by intern, awaiting supervisor review
-  APPROVED   // NEW: Final status after supervisor sign-off
+  PENDING
+  APPROVED
 }
 
-enum Priority { // NEW
+enum Priority {
   HIGH
   MEDIUM
   LOW

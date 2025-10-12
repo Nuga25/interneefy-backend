@@ -48,7 +48,7 @@ app.post("/api/auth/register-company", async (req, res) => {
   }
 });
 
-// User Login Endpoint
+// User Login Endpoint (UPDATED: Include fullName in JWT)
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -61,7 +61,12 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid password." });
     }
     const token = jwt.sign(
-      { userId: user.id, companyId: user.companyId, role: user.role },
+      {
+        userId: user.id,
+        companyId: user.companyId,
+        role: user.role,
+        fullName: user.fullName,
+      }, // NEW: Add fullName
       process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
@@ -102,6 +107,9 @@ app.get("/api/users/:id", authMiddleware, async (req, res) => {
         fullName: true,
         email: true,
         role: true,
+        domain: true, // NEW
+        startDate: true, // NEW
+        endDate: true, // NEW
         createdAt: true,
         // Include supervisor details for Interns
         supervisor: { select: { id: true, fullName: true, email: true } },
@@ -118,7 +126,7 @@ app.get("/api/users/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// Add a new user (for Admins only)
+// Add a new user (for Admins only) (UPDATED: Support new fields)
 app.post("/api/users", authMiddleware, async (req, res) => {
   // First, check if the logged-in user is an Admin
   if (req.user.role !== "ADMIN") {
@@ -128,7 +136,8 @@ app.post("/api/users", authMiddleware, async (req, res) => {
   }
 
   // NOTE: Added supervisorId for linking Interns to Supervisors
-  const { fullName, email, role, supervisorId } = req.body;
+  const { fullName, email, role, supervisorId, domain, startDate, endDate } =
+    req.body; // NEW: Extract optional fields
 
   // Basic validation
   if (!fullName || !email || !role) {
@@ -152,6 +161,11 @@ app.post("/api/users", authMiddleware, async (req, res) => {
         email,
         password: hashedPassword,
         role,
+        domain: role === "INTERN" ? domain || "General" : null, // NEW: Set domain for interns only
+        startDate:
+          role === "INTERN" ? (startDate ? new Date(startDate) : null) : null, // NEW
+        endDate:
+          role === "INTERN" ? (endDate ? new Date(endDate) : null) : null, // NEW
         supervisorId: role === "INTERN" ? parseInt(supervisorId) || null : null, // Only apply if role is INTERN
         companyId: req.user.companyId,
       },
@@ -161,6 +175,9 @@ app.post("/api/users", authMiddleware, async (req, res) => {
         fullName: true,
         email: true,
         role: true,
+        domain: true, // NEW
+        startDate: true, // NEW
+        endDate: true, // NEW
         createdAt: true,
         supervisorId: true,
       },
@@ -194,7 +211,7 @@ app.post("/api/users", authMiddleware, async (req, res) => {
   }
 });
 
-// Get all users in the Admin's company
+// Get all users in the Admin's company (UPDATED: Include new fields + supervisor)
 app.get("/api/users", authMiddleware, async (req, res) => {
   // Check if the user is an Admin or Supervisor
   if (req.user.role === "INTERN") {
@@ -213,7 +230,16 @@ app.get("/api/users", authMiddleware, async (req, res) => {
         fullName: true,
         email: true,
         role: true,
+        domain: true, // NEW
+        startDate: true, // NEW
+        endDate: true, // NEW
         createdAt: true,
+        supervisor: {
+          // NEW: Nested select for relation (replaces include)
+          select: {
+            fullName: true,
+          },
+        },
       },
     });
     res.status(200).json(users);
@@ -287,7 +313,7 @@ app.get("/api/statistics/enrollment", authMiddleware, async (req, res) => {
   }
 });
 
-// Get interns by domain/supervisor statistics
+// Get interns by domain/supervisor statistics (UPDATED: Use domain if available, fallback to supervisor)
 app.get("/api/statistics/domains", authMiddleware, async (req, res) => {
   if (req.user.role !== "ADMIN") {
     return res
@@ -296,13 +322,15 @@ app.get("/api/statistics/domains", authMiddleware, async (req, res) => {
   }
 
   try {
-    // Get all interns with their supervisors
+    // Get all interns with their supervisors and domain
     const interns = await prisma.user.findMany({
       where: {
         companyId: req.user.companyId,
         role: "INTERN",
       },
-      include: {
+      select: {
+        // UPDATED: Include domain
+        domain: true,
         supervisor: {
           select: {
             fullName: true,
@@ -311,16 +339,17 @@ app.get("/api/statistics/domains", authMiddleware, async (req, res) => {
       },
     });
 
-    // Group by supervisor (you can change this to domain when you add that field)
+    // Group by domain first, fallback to supervisor
     const domainData = {};
 
     interns.forEach((intern) => {
-      const supervisorName = intern.supervisor?.fullName || "Unassigned";
+      const domainKey =
+        intern.domain || intern.supervisor?.fullName || "Unassigned";
 
-      if (!domainData[supervisorName]) {
-        domainData[supervisorName] = { name: supervisorName, value: 0 };
+      if (!domainData[domainKey]) {
+        domainData[domainKey] = { name: domainKey, value: 0 };
       }
-      domainData[supervisorName].value++;
+      domainData[domainKey].value++;
     });
 
     // Convert to array
@@ -616,6 +645,10 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
         error:
           "Cannot delete user. Please reassign or delete their associated tasks and evaluations first.",
       });
+    }
+    // NEW: Handle user not found
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "User not found in your company." });
     }
     res.status(500).json({ error: "Failed to delete user." });
   }
