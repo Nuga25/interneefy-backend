@@ -222,23 +222,22 @@ app.get("/api/users", authMiddleware, async (req, res) => {
 
   try {
     const users = await prisma.user.findMany({
-      where: {
-        companyId: req.user.companyId,
-      },
+      where: { companyId: req.user.companyId },
       select: {
         id: true,
         fullName: true,
         email: true,
         role: true,
-        domain: true, // NEW
-        startDate: true, // NEW
-        endDate: true, // NEW
+        domain: true,
+        startDate: true,
+        endDate: true,
         createdAt: true,
-        supervisor: {
-          // NEW: Nested select for relation (replaces include)
-          select: {
-            fullName: true,
-          },
+        experience: true, // NEW
+        supervisor: { select: { fullName: true } },
+        supervisees: {
+          // NEW: For supervisors' intern count/list
+          select: { fullName: true },
+          where: { role: "INTERN" }, // Only count interns
         },
       },
     });
