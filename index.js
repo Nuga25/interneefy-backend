@@ -413,10 +413,8 @@ app.get("/api/tasks", authMiddleware, async (req, res) => {
       where: {
         internId: req.user.userId,
       },
-      // Include supervisor name for display on the dashboard task list
-      include: {
-        supervisor: { select: { fullName: true } },
-      },
+      // Include supervisor name and email for display on the dashboard task list
+      include: { supervisor: { select: { fullName: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.status(200).json(tasks);
@@ -601,6 +599,45 @@ app.post("/api/evaluations", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Submit Evaluation Error:", error);
     res.status(500).json({ error: "Failed to submit evaluation." });
+  }
+});
+
+// Get evaluation for the current intern
+app.get("/api/evaluations/me", authMiddleware, async (req, res) => {
+  if (req.user.role !== "INTERN") {
+    return res
+      .status(403)
+      .json({ error: "Forbidden: Only Interns can view their evaluation." });
+  }
+
+  try {
+    // Get the most recent evaluation for this intern
+    const evaluation = await prisma.evaluation.findFirst({
+      where: {
+        internId: req.user.userId,
+        companyId: req.user.companyId,
+      },
+      orderBy: {
+        submittedAt: "desc", // Get the latest evaluation
+      },
+      select: {
+        id: true,
+        comments: true,
+        technicalScore: true,
+        communicationScore: true,
+        teamworkScore: true,
+        submittedAt: true,
+      },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: "No evaluation found." });
+    }
+
+    res.status(200).json(evaluation);
+  } catch (error) {
+    console.error("Get Evaluation Error:", error);
+    res.status(500).json({ error: "Failed to retrieve evaluation." });
   }
 });
 
