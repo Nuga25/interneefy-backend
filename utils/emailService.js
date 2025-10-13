@@ -1,4 +1,3 @@
-// utils/emailService.js
 const nodemailer = require("nodemailer");
 
 // Create reusable transporter

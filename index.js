@@ -66,7 +66,7 @@ app.post("/api/auth/login", async (req, res) => {
         companyId: user.companyId,
         role: user.role,
         fullName: user.fullName,
-      }, // NEW: Add fullName
+      },
       process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
@@ -87,7 +87,7 @@ app.get("/api/test-protected", authMiddleware, (req, res) => {
   });
 });
 
-// --- NEW ENDPOINT: Get a single user's profile (safe fields only) ---
+// Get a single user's profile (safe fields only)
 // This is critical for the Intern dashboard to get the Supervisor's name
 app.get("/api/users/:id", authMiddleware, async (req, res) => {
   const userId = parseInt(req.params.id);
@@ -107,9 +107,9 @@ app.get("/api/users/:id", authMiddleware, async (req, res) => {
         fullName: true,
         email: true,
         role: true,
-        domain: true, // NEW
-        startDate: true, // NEW
-        endDate: true, // NEW
+        domain: true,
+        startDate: true,
+        endDate: true,
         createdAt: true,
         // Include supervisor details for Interns
         supervisor: { select: { id: true, fullName: true, email: true } },
@@ -126,7 +126,7 @@ app.get("/api/users/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// Add a new user (for Admins only) (UPDATED: Support new fields)
+// Add a new user (for Admins only)
 app.post("/api/users", authMiddleware, async (req, res) => {
   // First, check if the logged-in user is an Admin
   if (req.user.role !== "ADMIN") {
@@ -135,9 +135,8 @@ app.post("/api/users", authMiddleware, async (req, res) => {
       .json({ error: "Forbidden: Only Admins can add users." });
   }
 
-  // NOTE: Added supervisorId for linking Interns to Supervisors
   const { fullName, email, role, supervisorId, domain, startDate, endDate } =
-    req.body; // NEW: Extract optional fields
+    req.body;
 
   // Basic validation
   if (!fullName || !email || !role) {
@@ -161,11 +160,11 @@ app.post("/api/users", authMiddleware, async (req, res) => {
         email,
         password: hashedPassword,
         role,
-        domain: role === "INTERN" ? domain || "General" : null, // NEW: Set domain for interns only
+        domain: role === "INTERN" ? domain || "General" : null,
         startDate:
-          role === "INTERN" ? (startDate ? new Date(startDate) : null) : null, // NEW
+          role === "INTERN" ? (startDate ? new Date(startDate) : null) : null,
         endDate:
-          role === "INTERN" ? (endDate ? new Date(endDate) : null) : null, // NEW
+          role === "INTERN" ? (endDate ? new Date(endDate) : null) : null,
         supervisorId: role === "INTERN" ? parseInt(supervisorId) || null : null, // Only apply if role is INTERN
         companyId: req.user.companyId,
       },
@@ -175,9 +174,9 @@ app.post("/api/users", authMiddleware, async (req, res) => {
         fullName: true,
         email: true,
         role: true,
-        domain: true, // NEW
-        startDate: true, // NEW
-        endDate: true, // NEW
+        domain: true,
+        startDate: true,
+        endDate: true,
         createdAt: true,
         supervisorId: true,
       },
@@ -236,7 +235,6 @@ app.get("/api/users", authMiddleware, async (req, res) => {
         supervisorId: true,
         supervisor: { select: { fullName: true } },
         supervisees: {
-          // NEW: For supervisors' intern count/list
           select: { fullName: true },
           where: { role: "INTERN" }, // Only count interns
         },
@@ -329,7 +327,6 @@ app.get("/api/statistics/domains", authMiddleware, async (req, res) => {
         role: "INTERN",
       },
       select: {
-        // UPDATED: Include domain
         domain: true,
         supervisor: {
           select: {
@@ -362,7 +359,7 @@ app.get("/api/statistics/domains", authMiddleware, async (req, res) => {
   }
 });
 
-// --- UPDATED ENDPOINT: Create a new task (for Supervisors only) ---
+// Create a new task (for Supervisors only)
 app.post("/api/tasks", authMiddleware, async (req, res) => {
   if (req.user.role !== "SUPERVISOR") {
     return res
@@ -370,7 +367,6 @@ app.post("/api/tasks", authMiddleware, async (req, res) => {
       .json({ error: "Forbidden: Only Supervisors can create tasks." });
   }
 
-  // Added priority and category fields from the updated schema
   const { title, description, dueDate, internId, priority, category } =
     req.body;
 
@@ -385,8 +381,8 @@ app.post("/api/tasks", authMiddleware, async (req, res) => {
       data: {
         title,
         description,
-        priority, // Save new priority field
-        category, // Save new category field
+        priority,
+        category,
         dueDate: dueDate ? new Date(dueDate) : null,
         companyId: req.user.companyId,
         supervisorId: req.user.userId,
@@ -425,7 +421,7 @@ app.get("/api/tasks", authMiddleware, async (req, res) => {
   }
 });
 
-// --- NEW ENDPOINT: Get a single task by ID (for Task Detail View) ---
+// Get a single task by ID (for Task Detail View)
 app.get("/api/tasks/:id", authMiddleware, async (req, res) => {
   const taskId = parseInt(req.params.id);
   const { userId, role } = req.user;
@@ -459,7 +455,7 @@ app.get("/api/tasks/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// --- UPDATED ENDPOINT: Update a task (used by both Intern and Supervisor) ---
+// Update a task (used by both Intern and Supervisor)
 app.put("/api/tasks/:id", authMiddleware, async (req, res) => {
   const taskId = parseInt(req.params.id);
   // Allow updates to status (both roles), and details/priority (Supervisor only)
@@ -489,7 +485,7 @@ app.put("/api/tasks/:id", authMiddleware, async (req, res) => {
       if (internId) updateData.internId = parseInt(internId);
       canUpdate = true;
     } else if (role === "ADMIN") {
-      // Admins can update anything (optional, but good practice)
+      // Admins can update anything
       if (status) updateData.status = status;
       if (title) updateData.title = title;
       if (description) updateData.description = description;
@@ -525,7 +521,7 @@ app.put("/api/tasks/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE task endpoint (add this to your index.js)
+// DELETE task endpoint
 app.delete("/api/tasks/:id", authMiddleware, async (req, res) => {
   const taskId = parseInt(req.params.id);
   const { userId, role } = req.user;
@@ -547,7 +543,7 @@ app.delete("/api/tasks/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// --- NEW ENDPOINT: Get all tasks assigned to a Supervisor's Interns ---
+// Get all tasks assigned to a Supervisor's Interns
 app.get("/api/supervision/tasks", authMiddleware, async (req, res) => {
   if (req.user.role !== "SUPERVISOR") {
     return res
@@ -774,9 +770,7 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
   }
 
   try {
-    // Deleting the user. If your Prisma schema uses 'onDelete: Cascade' for relationships
-    // (Task, Evaluation), this will delete dependents automatically.
-    // If not, the P2003 catch block below will handle the constraint violation.
+    // Deleting the user.
     await prisma.user.delete({
       where: {
         id: userIdToDelete,
@@ -795,11 +789,95 @@ app.delete("/api/users/:id", authMiddleware, async (req, res) => {
           "Cannot delete user. Please reassign or delete their associated tasks and evaluations first.",
       });
     }
-    // NEW: Handle user not found
+    // Handle user not found
     if (error.code === "P2025") {
       return res.status(404).json({ error: "User not found in your company." });
     }
     res.status(500).json({ error: "Failed to delete user." });
+  }
+});
+
+// Update user (Admin only)
+app.put("/api/users/:id", authMiddleware, async (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res
+      .status(403)
+      .json({ error: "Forbidden: Only Admins can update users." });
+  }
+
+  const userId = parseInt(req.params.id);
+  const { fullName, email, domain, startDate, endDate, supervisorId } =
+    req.body;
+
+  // Validation
+  if (
+    !fullName &&
+    !email &&
+    !domain &&
+    !startDate &&
+    !endDate &&
+    !supervisorId
+  ) {
+    return res.status(400).json({ error: "No fields to update." });
+  }
+
+  try {
+    // Check if user exists and belongs to the same company
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!existingUser) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    if (existingUser.companyId !== req.user.companyId) {
+      return res
+        .status(403)
+        .json({ error: "Cannot update users from other companies." });
+    }
+
+    // Build update object
+    const updateData = {
+      ...(fullName && { fullName }),
+      ...(email && { email }),
+      ...(domain !== undefined && { domain }),
+      ...(startDate !== undefined && {
+        startDate: startDate ? new Date(startDate) : null,
+      }),
+      ...(endDate !== undefined && {
+        endDate: endDate ? new Date(endDate) : null,
+      }),
+      ...(supervisorId !== undefined && {
+        supervisorId: supervisorId ? parseInt(supervisorId) : null,
+      }),
+    };
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        domain: true,
+        startDate: true,
+        endDate: true,
+        supervisorId: true,
+        createdAt: true,
+      },
+    });
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error("Update User Error:", error);
+    if (error.code === "P2002") {
+      return res
+        .status(409)
+        .json({ error: "Email already in use by another user." });
+    }
+    res.status(500).json({ error: "Failed to update user." });
   }
 });
 

@@ -1,5 +1,3 @@
-// utils/passwordGenerator.js
-
 function generateSecurePassword(length = 12) {
   const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const lowercase = "abcdefghijklmnopqrstuvwxyz";

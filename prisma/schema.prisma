@@ -82,7 +82,7 @@ model Evaluation {
   supervisorId        Int
 }
 
-// --- Enums (Updated) ---
+// --- Enums ---
 
 enum Role {
   ADMIN
